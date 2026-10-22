@@ -91,9 +91,14 @@ button{font:inherit;color:inherit}
 
 /* ---------- chores ---------- */
 .chores{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 16px;display:flex;flex-direction:column;min-height:0}
-.chores h2{margin:0 0 4px 4px;font-size:1.4rem;font-weight:600}
-.progress{margin:0 0 14px 4px;color:var(--muted);font-size:.95rem}
-.list{list-style:none;margin:0;padding:0;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.chores h2{margin:0 0 0 4px;font-size:1.4rem;font-weight:600}
+.groups{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:22px;margin-top:10px}
+.group-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 4px 8px}
+.group-head h3{margin:0;font-size:1.1rem;font-weight:600}
+.group-head .progress{margin:0;font-size:.9rem;color:var(--muted)}
+.week .group-head h3{color:var(--muted)}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.when-due{display:inline-block;font-size:.75rem;font-weight:500;color:var(--muted);margin-left:6px}
 .chore{width:100%;display:flex;align-items:center;gap:14px;border:0;background:var(--soft);border-radius:14px;
   padding:12px 12px;text-align:left;cursor:pointer;min-height:60px}
 .chore.sub{margin-left:28px;width:calc(100% - 28px);min-height:50px}
@@ -106,7 +111,7 @@ button{font:inherit;color:inherit}
 .chore .n{display:block;font-size:.85rem;color:var(--muted);font-weight:400;margin-top:2px}
 .chore[aria-checked="true"] .t{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px}
 .late{display:inline-block;font-size:.75rem;font-weight:500;color:var(--muted);margin-left:6px}
-.alldone{margin:auto 0 0;padding:16px 4px 2px;display:flex;align-items:center;gap:12px;font-size:1.2rem;font-weight:600}
+.alldone{margin:0;padding:12px 4px 0;display:flex;align-items:center;gap:12px;font-size:1.2rem;font-weight:600}
 .alldone .sunburst{width:40px;height:40px;flex:none}
 .alldone.pop .sunburst{animation:pop .7s cubic-bezier(.2,1.6,.4,1)}
 @keyframes pop{0%{transform:scale(.2) rotate(-40deg)}100%{transform:scale(1) rotate(0)}}
@@ -158,7 +163,7 @@ dialog .panel{border:0;max-height:85vh;overflow:auto}
   .cal{order:2}
   .foot{order:3}
   .grid{grid-auto-rows:minmax(96px,auto)}
-  .list{overflow:visible}
+  .groups{overflow:visible}
 }
 @media (max-width: 600px){
   .top{flex-wrap:wrap}
@@ -377,23 +382,40 @@ function nextSwitch(today, now){
 /* =========================================================
    Chores
    ========================================================= */
-function visibleTasks(){
-  const today = ymd(new Date());
+// Splits chores into "Today" (due today or overdue) and "This week"
+// (due later this week, plus chores with no due date).
+function choreGroups(){
+  const now = new Date(), today = ymd(now);
+  const t0 = midnight(now);
+  const back = (t0.getDay() - settings.weekStart + 7) % 7;
+  const weekStart = ymd(addDays(t0, -back));
+  const weekEnd = ymd(addDays(t0, 6 - back)); // last day of this week
+  const dueOf = t => t.due ? t.due.slice(0,10) : null;
+  const bucket = t => { const d = dueOf(t); return d && d <= today ? 'today' : 'week'; };
   const keep = t => {
-    const due = t.due ? t.due.slice(0,10) : null;
-    if (t.status === 'completed') return t.completed && ymd(new Date(t.completed)) === today;
-    return !due || due <= today;
+    const due = dueOf(t);
+    if (t.status === 'completed'){
+      if (!t.completed) return false;
+      const doneOn = ymd(new Date(t.completed));
+      // Today's finished chores stay until midnight; weekly ones stay checked through the week.
+      return doneOn === today || (bucket(t) === 'week' && doneOn >= weekStart && (!due || due <= weekEnd));
+    }
+    return !due || due <= weekEnd;
   };
   const shown = data.tasks.filter(keep);
   const ids = new Set(shown.map(t => t.id));
   const byPos = (a,b) => (a.position||'').localeCompare(b.position||'');
-  const tops = shown.filter(t => !t.parent || !ids.has(t.parent)).sort(byPos);
-  const out = [];
+  const groups = { today:[], week:[] };
+  const tops = shown.filter(t => !t.parent || !ids.has(t.parent)).sort((a,b) => {
+    const da = dueOf(a) || '9999', db = dueOf(b) || '9999';
+    return da === db ? byPos(a,b) : da.localeCompare(db);
+  });
   for (const t of tops){
-    out.push({ t, sub:false });
-    shown.filter(s => s.parent === t.id).sort(byPos).forEach(s => out.push({ t:s, sub:true }));
+    const g = groups[bucket(t)];
+    g.push({ t, sub:false });
+    shown.filter(s => s.parent === t.id).sort(byPos).forEach(s => g.push({ t:s, sub:true }));
   }
-  return out;
+  return groups;
 }
 
 async function toggleTask(id){
@@ -447,9 +469,7 @@ function showMain(){
     </section>
     <section class="chores" aria-labelledby="choresTitle">
       <h2 id="choresTitle"></h2>
-      <p class="progress" id="progress"></p>
-      <ul class="list" id="choreList"></ul>
-      <div id="allDone"></div>
+      <div class="groups" id="choreList"></div>
     </section>
     <footer class="foot"><span id="status"></span><span id="updated"></span></footer>
   </div>`;
@@ -521,35 +541,46 @@ function renderCalendar(){
   grid.innerHTML = html;
 }
 
+function choreItem({t, sub}, today, inWeek){
+  const checked = t.status === 'completed';
+  const due = t.due ? t.due.slice(0,10) : null;
+  let tag = '';
+  if (!inWeek && !checked && due && due < today)
+    tag = `<span class="late">from ${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>`;
+  else if (inWeek && due)
+    tag = `<span class="when-due">${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>`;
+  return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t.id)}">
+    <span class="box">${CHECK}</span>
+    <span><span class="t">${esc(t.title)}</span>${tag}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
+  </button></li>`;
+}
+
 function renderChores(){
-  const list = document.getElementById('choreList'); if (!list) return;
+  const box = document.getElementById('choreList'); if (!box) return;
   const name = settings.name.trim();
-  document.getElementById('choresTitle').textContent = name ? `${name}'s chores` : "Today's chores";
-  const items = visibleTasks();
-  const today = ymd(new Date());
-  const done = items.filter(x => x.t.status === 'completed').length;
-  document.getElementById('progress').textContent = items.length
-    ? (done === items.length ? `All ${items.length} done` : `${done} of ${items.length} done`) : '';
+  document.getElementById('choresTitle').textContent = name ? `${name}'s chores` : 'Chores';
   if (!settings.taskList){
-    list.innerHTML = `<li class="empty">Pick a task list in parent settings (press and hold the gear).</li>`;
-  } else if (!items.length){
-    list.innerHTML = `<li class="empty">Nothing on the list for today.</li>`;
-  } else {
-    list.innerHTML = items.map(({t, sub}) => {
-      const checked = t.status === 'completed';
-      const due = t.due ? t.due.slice(0,10) : null;
-      const late = !checked && due && due < today
-        ? `<span class="late">from ${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>` : '';
-      return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t.id)}">
-        <span class="box">${CHECK}</span>
-        <span><span class="t">${esc(t.title)}</span>${late}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
-      </button></li>`;
-    }).join('');
+    box.innerHTML = `<p class="empty">Pick a task list in parent settings (press and hold the gear).</p>`;
+    return;
   }
-  const all = items.length > 0 && done === items.length;
-  const box = document.getElementById('allDone');
-  box.innerHTML = all ? `<p class="alldone${allDoneBefore === false ? ' pop' : ''}">${SUN}All done for today</p>` : '';
-  allDoneBefore = all;
+  const today = ymd(new Date());
+  const { today:dayItems, week:weekItems } = choreGroups();
+  const count = items => { const d = items.filter(x => x.t.status === 'completed').length;
+    return items.length ? (d === items.length ? `All ${items.length} done` : `${d} of ${items.length} done`) : ''; };
+  const dayDone = dayItems.length > 0 && dayItems.every(x => x.t.status === 'completed');
+  box.innerHTML = `
+    <section class="group today" aria-labelledby="gToday">
+      <div class="group-head"><h3 id="gToday">Today</h3><p class="progress">${count(dayItems)}</p></div>
+      ${dayItems.length ? `<ul class="list">${dayItems.map(x => choreItem(x, today, false)).join('')}</ul>`
+        : `<p class="empty">Nothing due today.</p>`}
+      ${dayDone ? `<p class="alldone${allDoneBefore === false ? ' pop' : ''}">${SUN}All done for today</p>` : ''}
+    </section>
+    <section class="group week" aria-labelledby="gWeek">
+      <div class="group-head"><h3 id="gWeek">This week</h3><p class="progress">${count(weekItems)}</p></div>
+      ${weekItems.length ? `<ul class="list">${weekItems.map(x => choreItem(x, today, true)).join('')}</ul>`
+        : `<p class="empty">Nothing else this week.</p>`}
+    </section>`;
+  allDoneBefore = dayDone;
 }
 
 function renderFooter(){
