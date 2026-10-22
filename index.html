@@ -95,8 +95,29 @@ button{font:inherit;color:inherit}
 .groups{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:22px;margin-top:10px}
 .group-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 4px 8px}
 .group-head h3{margin:0;font-size:1.1rem;font-weight:600}
-.group-head .progress{margin:0;font-size:.9rem;color:var(--muted)}
-.week .group-head h3{color:var(--muted)}
+.group-head .progress{margin:0;font-size:.9rem;color:var(--muted);white-space:nowrap}
+.week .group-head h3{color:var(--muted);min-width:7.5em;text-align:center}
+.weeknav{display:flex;align-items:center;gap:6px;margin-left:-6px}
+.wbtn{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:1.1rem;cursor:pointer;line-height:1}
+.wbtn:disabled{opacity:.35;cursor:default}
+.inline{display:flex;gap:10px;align-items:center;font-size:.95rem}
+
+/* cheer overlay */
+.cheer{position:fixed;inset:0;z-index:30;display:grid;place-items:center;pointer-events:none;overflow:hidden}
+.cheer-card{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card);color:var(--ink);
+  border-radius:28px;padding:22px 34px 24px;box-shadow:0 18px 50px rgba(10,20,30,.28);text-align:center;
+  animation:cheerIn 1.5s cubic-bezier(.2,1.4,.4,1) both}
+.cheer-card p{margin:0;font-size:2rem;font-weight:700;letter-spacing:-.01em}
+.cheer-card small{color:var(--muted);font-size:1rem}
+.cheer-card .star{width:64px;height:64px;animation:spin 1s cubic-bezier(.2,1.4,.4,1) both}
+.cheer.big .cheer-card{animation-duration:2.8s;padding:28px 44px 30px}
+.cheer.big .cheer-card p{font-size:2.6rem}
+.cheer.big .star{width:92px;height:92px}
+.bit{position:absolute;left:50%;top:50%;animation:fly 1.4s cubic-bezier(.15,.7,.3,1) var(--d) both}
+.cheer.big .bit{animation-duration:2.5s}
+@keyframes cheerIn{0%{opacity:0;transform:scale(.4)}14%{opacity:1;transform:scale(1.06)}22%{transform:scale(1)}80%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.92) translateY(-12px)}}
+@keyframes spin{0%{transform:rotate(-120deg) scale(.3)}100%{transform:rotate(0) scale(1)}}
+@keyframes fly{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}70%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy) + 120px)) rotate(var(--r))}}
 .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .when-due{display:inline-block;font-size:.75rem;font-weight:500;color:var(--muted);margin-left:6px}
 .chore{width:100%;display:flex;align-items:center;gap:14px;border:0;background:var(--soft);border-radius:14px;
@@ -174,7 +195,10 @@ dialog .panel{border:0;max-height:85vh;overflow:auto}
 }
 @media (prefers-reduced-motion: reduce){
   *{animation:none!important;transition:none!important}
+  .cheer-card{animation:fadeCheer 1.5s ease both!important}
+  .cheer.big .cheer-card{animation-duration:2.8s!important}
 }
+@keyframes fadeCheer{0%,100%{opacity:0}12%,80%{opacity:1}}
 </style>
 </head>
 <body>
@@ -193,7 +217,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem('ow.'+k, JSON.stringify(v)); }catch{} },
   del(k){ try{ localStorage.removeItem('ow.'+k); }catch{} }
 };
-const DEFAULTS = { clientId:'', calendars:[], custodyCal:'', taskList:'', name:'', weekStart:0, weeks:4, configured:false };
+const DEFAULTS = { clientId:'', calendars:[], custodyCal:'', taskList:'', name:'', weekStart:0, weeks:4, sounds:true, configured:false };
 let settings = Object.assign({}, DEFAULTS, LS.get('settings', {}));
 const saveSettings = () => LS.set('settings', settings);
 
@@ -276,6 +300,8 @@ async function api(url, opts = {}){
    ========================================================= */
 let data = LS.get('cache', { events:[], tasks:[], calMeta:{}, at:0 });
 let weekOffset = 0;
+let choreWeek = 0; // 0 = this week, 1 = next week, ...
+const MAX_CHORE_WEEKS = 4;
 let lastError = '';
 let allDoneBefore = null;
 
@@ -390,6 +416,7 @@ function choreGroups(){
   const back = (t0.getDay() - settings.weekStart + 7) % 7;
   const weekStart = ymd(addDays(t0, -back));
   const weekEnd = ymd(addDays(t0, 6 - back)); // last day of this week
+  const fStart = ymd(addDays(t0, -back + 7*choreWeek)), fEnd = ymd(addDays(t0, 6 - back + 7*choreWeek));
   const dueOf = t => t.due ? t.due.slice(0,10) : null;
   const bucket = t => { const d = dueOf(t); return d && d <= today ? 'today' : 'week'; };
   const keep = t => {
@@ -402,7 +429,11 @@ function choreGroups(){
     }
     return !due || due <= weekEnd;
   };
-  const shown = data.tasks.filter(keep);
+  const thisWeek = data.tasks.filter(keep);
+  // Later weeks: everything due inside that week, done or not.
+  const later = choreWeek > 0 ? data.tasks.filter(t => { const d = dueOf(t); return d && d >= fStart && d <= fEnd; }) : [];
+  const todayIds = new Set(thisWeek.filter(t => bucket(t) === 'today').map(t => t.id));
+  const shown = choreWeek > 0 ? thisWeek.filter(t => todayIds.has(t.id) || todayIds.has(t.parent)).concat(later) : thisWeek;
   const ids = new Set(shown.map(t => t.id));
   const byPos = (a,b) => (a.position||'').localeCompare(b.position||'');
   const groups = { today:[], week:[] };
@@ -424,6 +455,12 @@ async function toggleTask(id){
   const prev = { status:t.status, completed:t.completed };
   t.status = done ? 'completed' : 'needsAction';
   t.completed = done ? new Date().toISOString() : undefined;
+  if (done){
+    const g = choreGroups();
+    const inToday = g.today.some(x => x.t.id === id);
+    const allToday = inToday && g.today.length > 0 && g.today.every(x => x.t.status === 'completed');
+    celebrate(allToday);
+  }
   renderChores();
   try{
     const body = done ? { status:'completed' } : { status:'needsAction', completed:null };
@@ -473,11 +510,13 @@ function showMain(){
     </section>
     <footer class="foot"><span id="status"></span><span id="updated"></span></footer>
   </div>`;
-  document.getElementById('prevW').onclick = () => { weekOffset--; renderCalendar(); };
-  document.getElementById('nextW').onclick = () => { weekOffset++; renderCalendar(); };
+  document.getElementById('prevW').onclick = () => { weekOffset--; renderCalendar(); poke(); };
+  document.getElementById('nextW').onclick = () => { weekOffset++; renderCalendar(); poke(); };
   document.getElementById('todayW').onclick = () => { weekOffset = 0; renderCalendar(); };
   document.getElementById('choreList').addEventListener('click', e => {
-    const b = e.target.closest('[data-task]'); if (b) toggleTask(b.dataset.task);
+    const w = e.target.closest('[data-cw]');
+    if (w){ choreWeek = Math.max(0, Math.min(MAX_CHORE_WEEKS, choreWeek + Number(w.dataset.cw))); renderChores(); poke(); return; }
+    const b = e.target.closest('[data-task]'); if (b) toggleTask(b.dataset.task, b);
   });
   document.getElementById('grid').addEventListener('click', e => {
     const b = e.target.closest('[data-day]'); if (b) openDay(b.dataset.day);
@@ -548,11 +587,19 @@ function choreItem({t, sub}, today, inWeek){
   if (!inWeek && !checked && due && due < today)
     tag = `<span class="late">from ${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>`;
   else if (inWeek && due)
-    tag = `<span class="when-due">${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>`;
+    tag = `<span class="when-due">${parseYmd(due).toLocaleDateString([], choreWeek > 0 ? {weekday:'short', month:'short', day:'numeric'} : {weekday:'long'})}</span>`;
   return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t.id)}">
     <span class="box">${CHECK}</span>
     <span><span class="t">${esc(t.title)}</span>${tag}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
   </button></li>`;
+}
+
+function weekLabel(){
+  if (choreWeek === 0) return 'This week';
+  if (choreWeek === 1) return 'Next week';
+  const t0 = midnight(new Date());
+  const back = (t0.getDay() - settings.weekStart + 7) % 7;
+  return 'Week of ' + addDays(t0, -back + 7*choreWeek).toLocaleDateString([], {month:'short', day:'numeric'});
 }
 
 function renderChores(){
@@ -576,9 +623,15 @@ function renderChores(){
       ${dayDone ? `<p class="alldone${allDoneBefore === false ? ' pop' : ''}">${SUN}All done for today</p>` : ''}
     </section>
     <section class="group week" aria-labelledby="gWeek">
-      <div class="group-head"><h3 id="gWeek">This week</h3><p class="progress">${count(weekItems)}</p></div>
+      <div class="group-head">
+        <div class="weeknav">
+          <button class="wbtn" data-cw="-1" aria-label="Earlier week" ${choreWeek === 0 ? 'disabled' : ''}>‹</button>
+          <h3 id="gWeek">${esc(weekLabel())}</h3>
+          <button class="wbtn" data-cw="1" aria-label="Later week" ${choreWeek >= MAX_CHORE_WEEKS ? 'disabled' : ''}>›</button>
+        </div>
+        <p class="progress">${count(weekItems)}</p></div>
       ${weekItems.length ? `<ul class="list">${weekItems.map(x => choreItem(x, today, true)).join('')}</ul>`
-        : `<p class="empty">Nothing else this week.</p>`}
+        : `<p class="empty">${choreWeek === 0 ? 'Nothing else this week.' : 'Nothing planned yet.'}</p>`}
     </section>`;
   allDoneBefore = dayDone;
 }
@@ -605,6 +658,80 @@ function openDay(key){
   const dlg = document.getElementById('dayDialog');
   panel.querySelector('#closeDay').onclick = () => dlg.close();
   dlg.showModal();
+}
+
+/* ---------- Cheers ---------- */
+const CHEERS = ['Nice work{n}!','Way to go{n}!','Chore crushed!','You did it{n}!','Look at you go!','High five{n}!','Boom. Done!','Awesome job{n}!','One more down!','Superstar{n}!'];
+const CONFETTI = ['#F2B33D','#4C7BE0','#E07A4C','#2E9D6E','#9B63D1','#E25C8A'];
+let lastCheer = -1, cheerTimer;
+function celebrate(big){
+  const n = settings.name.trim() ? ', ' + settings.name.trim() : '';
+  let i; do { i = Math.floor(Math.random() * CHEERS.length); } while (i === lastCheer && CHEERS.length > 1);
+  lastCheer = i;
+  const msg = big ? `All done for today${n}!` : CHEERS[i].replace('{n}', n);
+  document.querySelector('.cheer')?.remove(); clearTimeout(cheerTimer);
+  const el = document.createElement('div');
+  el.className = 'cheer' + (big ? ' big' : '');
+  el.setAttribute('role', 'status');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let bits = '';
+  if (!reduce){
+    const count = big ? 70 : 32;
+    for (let k = 0; k < count; k++){
+      const ang = Math.random() * Math.PI * 2, dist = (big ? 260 : 170) + Math.random() * (big ? 260 : 140);
+      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist * 0.75 - 40;
+      const size = 8 + Math.random() * 8, round = Math.random() < .35;
+      bits += `<i class="bit" style="--dx:${dx.toFixed(0)}px;--dy:${dy.toFixed(0)}px;--r:${(Math.random()*720-360).toFixed(0)}deg;--d:${(Math.random()*120).toFixed(0)}ms;
+        width:${size.toFixed(0)}px;height:${(round ? size : size*0.5).toFixed(0)}px;border-radius:${round ? '50%' : '2px'};background:${CONFETTI[k % CONFETTI.length]}"></i>`;
+    }
+  }
+  el.innerHTML = `${bits}<div class="cheer-card">${STAR}<p>${esc(msg)}</p>${big ? '<small>Every chore for today is checked off.</small>' : ''}</div>`;
+  document.body.appendChild(el);
+  playCheer(big);
+  cheerTimer = setTimeout(() => el.remove(), big ? 2800 : 1500);
+}
+const STAR = '<svg class="star" viewBox="0 0 64 64" aria-hidden="true"><path fill="#F2B33D" d="M32 4l8.2 17.4 19 2.4-14 13.1 3.6 18.9L32 46.6 15.2 55.8l3.6-18.9-14-13.1 19-2.4z"/><path fill="#fff" opacity=".35" d="M32 12l5.6 11.9-12.4 1.5z"/></svg>';
+
+let actx = null;
+function audio(){
+  if (!actx){ const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; actx = new AC(); }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+function tone(c, freq, at, dur, type = 'triangle', vol = .16){
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + .012);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(at); o.stop(at + dur + .05);
+}
+function playCheer(big){
+  if (!settings.sounds) return;
+  const c = audio(); if (!c) return;
+  const t = c.currentTime + .01;
+  // A quick "pop", then a bright chime. Big wins get a little fanfare.
+  const pop = c.createOscillator(), pg = c.createGain();
+  pop.type = 'sine'; pop.frequency.setValueAtTime(900, t); pop.frequency.exponentialRampToValueAtTime(180, t + .08);
+  pg.gain.setValueAtTime(.25, t); pg.gain.exponentialRampToValueAtTime(0.0001, t + .1);
+  pop.connect(pg); pg.connect(c.destination); pop.start(t); pop.stop(t + .12);
+  if (!big){
+    [[784, .06], [1047, .13], [1319, .2]].forEach(([f, d]) => tone(c, f, t + d, .35));
+  } else {
+    [[523, .06], [659, .16], [784, .26], [1047, .36], [784, .5], [1047, .6]].forEach(([f, d]) => tone(c, f, t + d, .3, 'square', .07));
+    tone(c, 1319, t + .72, .9, 'triangle', .18);
+    [2093, 2637, 3136, 2637, 3520].forEach((f, k) => tone(c, f, t + .8 + k * .07, .25, 'sine', .05));
+  }
+}
+
+/* Go back to the current week after two quiet minutes, so the display doesn't stay on a future week. */
+let idleTimer;
+function poke(){
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (choreWeek || weekOffset){ choreWeek = 0; weekOffset = 0; renderMain(); }
+  }, 2*60*1000);
 }
 
 let toastTimer;
@@ -653,6 +780,9 @@ async function openSettings(){
       <select id="sWeeks">${[2,3,4,5].map(n => `<option value="${n}" ${settings.weeks===n?'selected':''}>${n} weeks</option>`).join('')}</select></div>
     <div class="field"><label for="sStart">Week starts on</label>
       <select id="sStart"><option value="0" ${settings.weekStart===0?'selected':''}>Sunday</option><option value="1" ${settings.weekStart===1?'selected':''}>Monday</option></select></div>
+    <div class="field"><span class="lbl">Cheers</span>
+      <label class="inline"><input type="checkbox" id="sSounds" ${settings.sounds ? 'checked' : ''}> Play a sound when she checks off a chore</label>
+      <span class="hint">Sound plays only when the iPad's volume is up and it isn't on silent.</span></div>
     <div class="actions">
       <button class="btn warn" id="sOut">Disconnect Google</button>
       <button class="btn ghost" id="sCancel">Cancel</button>
@@ -669,6 +799,7 @@ async function openSettings(){
     settings.taskList = panel.querySelector('#sList').value;
     settings.weeks = Number(panel.querySelector('#sWeeks').value);
     settings.weekStart = Number(panel.querySelector('#sStart').value);
+    settings.sounds = panel.querySelector('#sSounds').checked;
     settings.configured = true;
     saveSettings(); dlg.close(); weekOffset = 0;
     if (!mounted) showMain();
@@ -731,7 +862,7 @@ let lastDay = ymd(new Date());
 setInterval(() => {
   if (!mounted) return;
   const k = ymd(new Date());
-  if (k !== lastDay){ lastDay = k; weekOffset = 0; allDoneBefore = null; renderMain(); refresh(); }
+  if (k !== lastDay){ lastDay = k; weekOffset = 0; choreWeek = 0; allDoneBefore = null; renderMain(); refresh(); }
   else renderHeader();
 }, 15000);
 setInterval(() => { if (mounted && document.visibilityState === 'visible') refresh(); }, 5*60*1000);
