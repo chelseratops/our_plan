@@ -60,3 +60,6 @@ To make it behave like a wall display:
 **Signing in again.** Google's sign-in tokens last about an hour. The app renews quietly in the background, which may briefly flash a Google page. If Google ever needs a tap, the display shows a "Sign in with Google" button.
 
 **Updating the app.** Edit files in the GitHub repository; the iPad picks up the new version the next time it reloads.
+
+
+**More than one Google account.** Chore lists can come from several accounts. In parent settings, tap Add another Google account and check the lists to include. Each added account must also be a test user in Google Cloud.
