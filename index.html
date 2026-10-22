@@ -119,6 +119,7 @@ button{font:inherit;color:inherit}
 @keyframes spin{0%{transform:rotate(-120deg) scale(.3)}100%{transform:rotate(0) scale(1)}}
 @keyframes fly{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}70%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy) + 120px)) rotate(var(--r))}}
 .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.src{display:block;font-size:.75rem;font-weight:500;color:var(--muted);margin-top:2px}
 .when-due{display:inline-block;font-size:.75rem;font-weight:500;color:var(--muted);margin-left:6px}
 .chore{width:100%;display:flex;align-items:center;gap:14px;border:0;background:var(--soft);border-radius:14px;
   padding:12px 12px;text-align:left;cursor:pointer;min-height:60px}
@@ -160,6 +161,10 @@ button{font:inherit;color:inherit}
 .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
 .checks{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--soft)}
 .checks label{display:flex;gap:10px;align-items:center;font-size:.95rem}
+.checks.lists{max-height:none;gap:12px}
+.acct{display:flex;flex-direction:column;gap:6px}
+.acct + .acct{border-top:1px solid var(--line);padding-top:10px}
+.acct-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.9rem;word-break:break-all}
 .swatch{width:12px;height:12px;border-radius:3px;flex:none}
 .err{color:var(--danger);font-size:.95rem}
 
@@ -217,9 +222,12 @@ const LS = {
   set(k, v){ try{ localStorage.setItem('ow.'+k, JSON.stringify(v)); }catch{} },
   del(k){ try{ localStorage.removeItem('ow.'+k); }catch{} }
 };
-const DEFAULTS = { clientId:'', calendars:[], custodyCal:'', taskList:'', name:'', weekStart:0, weeks:4, sounds:true, configured:false };
+const DEFAULTS = { clientId:'', calendars:[], custodyCal:'', taskList:'', name:'', weekStart:0, weeks:4, sounds:true, taskLists:null, extraAccounts:[], configured:false };
 let settings = Object.assign({}, DEFAULTS, LS.get('settings', {}));
 const saveSettings = () => LS.set('settings', settings);
+// Older versions stored a single chore list.
+if (!Array.isArray(settings.taskLists)) settings.taskLists = settings.taskList ? [{ acct:'primary', id:settings.taskList }] : [];
+if (!Array.isArray(settings.extraAccounts)) settings.extraAccounts = [];
 
 /* =========================================================
    Dates
@@ -249,19 +257,37 @@ function inkFor(hex){
    Google sign-in (OAuth redirect flow, no server needed)
    ========================================================= */
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks';
+const EXTRA_SCOPES = 'openid email https://www.googleapis.com/auth/tasks';
 const CAL = 'https://www.googleapis.com/calendar/v3';
 const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const redirectUri = () => location.origin + location.pathname;
 
-function startAuth(silent){
+/* Accounts: 'primary' is the main account (calendars + chores). Extra accounts only share chore lists.
+   Each one keeps its own short-lived token, renewed quietly with Google's prompt=none. */
+const tokens = () => LS.get('tokens', {});
+function setToken(acct, v, secs){ const t = tokens(); t[acct] = { v, exp:Date.now() + Number(secs||3600)*1000 }; LS.set('tokens', t); }
+function dropToken(acct){ const t = tokens(); delete t[acct]; LS.set('tokens', t); }
+function token(acct = 'primary'){ const t = tokens()[acct]; return t && t.exp - 60000 > Date.now() ? t.v : null; }
+(function migrate(){ const old = LS.get('token', null); if (old && !tokens().primary){ const t = tokens(); t.primary = old; LS.set('tokens', t); } LS.del('token'); })();
+
+const silentMap = () => LS.get('silentAt', {});
+const recentlyTriedSilent = (acct = 'primary') => { const m = silentMap(); return typeof m === 'object' && Date.now() - (m[acct]||0) < 3*60*1000; };
+function markSilent(acct){ let m = silentMap(); if (typeof m !== 'object') m = {}; m[acct] = Date.now(); LS.set('silentAt', m); }
+function clearSilent(acct){ const m = silentMap(); if (typeof m === 'object'){ delete m[acct]; LS.set('silentAt', m); } }
+
+// acct: 'primary', 'add' (sign in a new extra account), or an extra account's email.
+function startAuth(silent, acct = 'primary'){
   const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2,'0')).join('');
-  LS.set('state', state);
-  if (silent) LS.set('silentAt', Date.now());
+  LS.set('pending', { state, acct });
+  if (silent) markSilent(acct);
   const p = new URLSearchParams({
     client_id: settings.clientId, redirect_uri: redirectUri(), response_type: 'token',
-    scope: SCOPES, include_granted_scopes: 'true', state
+    scope: acct === 'primary' ? SCOPES : EXTRA_SCOPES, include_granted_scopes: 'true', state
   });
+  const hint = acct === 'primary' ? LS.get('primaryEmail', '') : acct === 'add' ? '' : acct;
+  if (hint) p.set('login_hint', hint);
   if (silent) p.set('prompt', 'none');
+  else if (acct === 'add') p.set('prompt', 'select_account');
   location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + p);
 }
 function readAuthHash(){
@@ -269,28 +295,50 @@ function readAuthHash(){
   if (!h || !(h.includes('access_token=') || h.includes('error='))) return null;
   const q = new URLSearchParams(h.slice(1));
   history.replaceState(null, '', redirectUri() + location.search);
-  const expected = LS.get('state', null); LS.del('state');
-  if (!expected || q.get('state') !== expected) return { error:'state_mismatch' };
-  if (q.get('error')) return { error:q.get('error') };
-  LS.set('token', { v:q.get('access_token'), exp:Date.now() + Number(q.get('expires_in')||3600)*1000 });
-  LS.set('connected', true);
-  LS.del('silentAt');
-  return { ok:true };
+  const pending = LS.get('pending', null); LS.del('pending');
+  if (!pending || q.get('state') !== pending.state) return { error:'state_mismatch', acct:'primary' };
+  if (q.get('error')) return { error:q.get('error'), acct:pending.acct };
+  return { ok:true, acct:pending.acct, v:q.get('access_token'), secs:q.get('expires_in') };
 }
-function token(){ const t = LS.get('token', null); return t && t.exp - 60000 > Date.now() ? t.v : null; }
-const recentlyTriedSilent = () => Date.now() - LS.get('silentAt', 0) < 3*60*1000;
-
-function reauth(){
-  // Try a quiet re-sign-in once; if Google needs a tap, show the connect screen instead of looping.
-  if (LS.get('connected', false) && !recentlyTriedSilent()) startAuth(true);
-  else showConnect('expired');
+// Finishes a sign-in. Extra accounts are identified by email so they can be renewed later.
+async function finishAuth(r){
+  if (r.acct === 'primary'){
+    setToken('primary', r.v, r.secs); LS.set('connected', true); clearSilent('primary');
+    return;
+  }
+  try{
+    const res = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers:{ Authorization:'Bearer ' + r.v } });
+    const email = (await res.json()).email;
+    if (!email) throw new Error('no email');
+    if (email.toLowerCase() === (LS.get('primaryEmail','') || '').toLowerCase()){
+      toast("That's already the main account. Pick a different one to add."); return;
+    }
+    if (r.acct !== 'add' && r.acct.toLowerCase() !== email.toLowerCase()){
+      toast(`Signed in as ${email}, but ${r.acct} was expected. Try reconnecting again.`); return;
+    }
+    setToken(email, r.v, r.secs); clearSilent(email);
+    if (!settings.extraAccounts.includes(email)){ settings.extraAccounts.push(email); saveSettings(); }
+    if (r.acct === 'add') LS.set('reopenSettings', true);
+  }catch{ toast("Couldn't finish adding that account. Try again."); }
 }
 
-async function api(url, opts = {}){
-  const t = token();
-  if (!t){ reauth(); throw new Error('auth'); }
+class AuthNeeded extends Error { constructor(acct){ super('auth'); this.acct = acct; } }
+const needsReconnect = new Set();
+function reauth(acct = 'primary'){
+  if (acct === 'primary'){
+    if (LS.get('connected', false) && !recentlyTriedSilent('primary')) startAuth(true, 'primary');
+    else showConnect('expired');
+  } else {
+    if (!recentlyTriedSilent(acct)) startAuth(true, acct);
+    else needsReconnect.add(acct);
+  }
+}
+
+async function api(url, opts = {}, acct = 'primary'){
+  const t = token(acct);
+  if (!t) throw new AuthNeeded(acct);
   const res = await fetch(url, { ...opts, headers: { Authorization:'Bearer '+t, 'Content-Type':'application/json', ...(opts.headers||{}) } });
-  if (res.status === 401){ LS.del('token'); reauth(); throw new Error('auth'); }
+  if (res.status === 401){ dropToken(acct); throw new AuthNeeded(acct); }
   if (!res.ok) throw new Error(`Google returned ${res.status}`);
   return res.status === 204 ? null : res.json();
 }
@@ -316,18 +364,25 @@ async function loadCalendarList(){
   const r = await api(`${CAL}/users/me/calendarList?minAccessRole=reader&maxResults=250`);
   return (r.items || []).map(c => ({ id:c.id, name:c.summaryOverride || c.summary, color:c.backgroundColor, primary:!!c.primary }));
 }
-async function loadTaskLists(){
-  const r = await api(`${TASKS}/users/@me/lists?maxResults=100`);
+async function loadTaskLists(acct = 'primary'){
+  const r = await api(`${TASKS}/users/@me/lists?maxResults=100`, {}, acct);
   return (r.items || []).map(l => ({ id:l.id, name:l.title }));
 }
 
 async function refresh(){
-  if (!token()){ reauth(); return; }
+  if (!token('primary')){ reauth('primary'); return; }
+  // Renew any extra account that's expired (one quiet redirect at a time).
+  const usedAccts = [...new Set(settings.taskLists.map(l => l.acct))].filter(a => a !== 'primary');
+  for (const a of usedAccts){
+    if (!token(a)){ if (!recentlyTriedSilent(a)){ startAuth(true, a); return; } needsReconnect.add(a); }
+  }
   const { start, end, today } = range();
   const tMax = new Date(Math.max(end, addDays(today, 42)));
   const cals = [...new Set([...settings.calendars, settings.custodyCal].filter(Boolean))];
   try{
     const calList = await loadCalendarList();
+    const prim = calList.find(c => c.primary);
+    if (prim && prim.id.includes('@')) LS.set('primaryEmail', prim.id);
     const meta = Object.fromEntries(calList.map(c => [c.id, c]));
     const evLists = await Promise.all(cals.map(async id => {
       const q = new URLSearchParams({ timeMin:addDays(start,-1).toISOString(), timeMax:tMax.toISOString(),
@@ -338,17 +393,25 @@ async function refresh(){
         allDay:!!e.start.date, start:e.start.date || e.start.dateTime, end:e.end.date || e.end.dateTime
       }));
     }));
-    let tasks = [];
-    if (settings.taskList){
-      const q = new URLSearchParams({ showCompleted:'true', showHidden:'true', maxResults:'100' });
-      const r = await api(`${TASKS}/lists/${encodeURIComponent(settings.taskList)}/tasks?${q}`);
-      tasks = (r.items || []).filter(t => !t.deleted && t.title && t.title.trim());
-    }
-    data = { events:evLists.flat(), tasks, calMeta:meta, at:Date.now() };
+    const prevTasks = data.tasks || [];
+    const taskLists = await Promise.all(settings.taskLists.map(async l => {
+      if (!token(l.acct)) return prevTasks.filter(t => t._acct === l.acct && t._list === l.id);
+      try{
+        const q = new URLSearchParams({ showCompleted:'true', showHidden:'true', maxResults:'100' });
+        const r = await api(`${TASKS}/lists/${encodeURIComponent(l.id)}/tasks?${q}`, {}, l.acct);
+        needsReconnect.delete(l.acct);
+        return (r.items || []).filter(t => !t.deleted && t.title && t.title.trim())
+          .map(t => ({ ...t, _acct:l.acct, _list:l.id, _key:`${l.acct}|${l.id}|${t.id}`, _listName:l.name || '' }));
+      }catch(e){
+        if (e instanceof AuthNeeded && l.acct !== 'primary'){ needsReconnect.add(l.acct); return prevTasks.filter(t => t._acct === l.acct && t._list === l.id); }
+        throw e;
+      }
+    }));
+    data = { events:evLists.flat(), tasks:taskLists.flat(), calMeta:meta, at:Date.now() };
     LS.set('cache', data);
     lastError = '';
   }catch(e){
-    if (e.message === 'auth') return;
+    if (e instanceof AuthNeeded){ reauth(e.acct); return; }
     lastError = navigator.onLine ? "Can't reach Google right now." : 'No internet connection.';
   }
   renderMain();
@@ -432,46 +495,49 @@ function choreGroups(){
   const thisWeek = data.tasks.filter(keep);
   // Later weeks: everything due inside that week, done or not.
   const later = choreWeek > 0 ? data.tasks.filter(t => { const d = dueOf(t); return d && d >= fStart && d <= fEnd; }) : [];
-  const todayIds = new Set(thisWeek.filter(t => bucket(t) === 'today').map(t => t.id));
-  const shown = choreWeek > 0 ? thisWeek.filter(t => todayIds.has(t.id) || todayIds.has(t.parent)).concat(later) : thisWeek;
-  const ids = new Set(shown.map(t => t.id));
+  const todayIds = new Set(thisWeek.filter(t => bucket(t) === 'today').map(t => t._key));
+  const shown = choreWeek > 0 ? thisWeek.filter(t => todayIds.has(t._key) || (t.parent && todayIds.has(`${t._acct}|${t._list}|${t.parent}`))).concat(later) : thisWeek;
+  const pkey = t => `${t._acct}|${t._list}|${t.parent}`;
+  const ids = new Set(shown.map(t => t._key));
   const byPos = (a,b) => (a.position||'').localeCompare(b.position||'');
   const groups = { today:[], week:[] };
-  const tops = shown.filter(t => !t.parent || !ids.has(t.parent)).sort((a,b) => {
+  const tops = shown.filter(t => !t.parent || !ids.has(pkey(t))).sort((a,b) => {
     const da = dueOf(a) || '9999', db = dueOf(b) || '9999';
     return da === db ? byPos(a,b) : da.localeCompare(db);
   });
   for (const t of tops){
     const g = groups[bucket(t)];
     g.push({ t, sub:false });
-    shown.filter(s => s.parent === t.id).sort(byPos).forEach(s => g.push({ t:s, sub:true }));
+    shown.filter(s => s.parent && pkey(s) === t._key).sort(byPos).forEach(s => g.push({ t:s, sub:true }));
   }
   return groups;
 }
 
-async function toggleTask(id){
-  const t = data.tasks.find(x => x.id === id); if (!t) return;
+async function toggleTask(key){
+  const t = data.tasks.find(x => x._key === key); if (!t) return;
+  const id = t.id;
   const done = t.status !== 'completed';
   const prev = { status:t.status, completed:t.completed };
   t.status = done ? 'completed' : 'needsAction';
   t.completed = done ? new Date().toISOString() : undefined;
   if (done){
     const g = choreGroups();
-    const inToday = g.today.some(x => x.t.id === id);
+    const inToday = g.today.some(x => x.t._key === key);
     const allToday = inToday && g.today.length > 0 && g.today.every(x => x.t.status === 'completed');
     celebrate(allToday);
   }
   renderChores();
   try{
     const body = done ? { status:'completed' } : { status:'needsAction', completed:null };
-    const upd = await api(`${TASKS}/lists/${encodeURIComponent(settings.taskList)}/tasks/${encodeURIComponent(id)}`,
-      { method:'PATCH', body:JSON.stringify(body) });
+    const upd = await api(`${TASKS}/lists/${encodeURIComponent(t._list)}/tasks/${encodeURIComponent(id)}`,
+      { method:'PATCH', body:JSON.stringify(body) }, t._acct);
     if (upd) Object.assign(t, upd);
     LS.set('cache', data);
   }catch(e){
     t.status = prev.status; t.completed = prev.completed;
     renderChores();
-    if (e.message !== 'auth') toast("That didn't save. Check the Wi-Fi and tap it again.");
+    if (e instanceof AuthNeeded){ if (e.acct === 'primary') reauth('primary'); else { needsReconnect.add(e.acct); renderFooter(); toast(`Reconnect ${e.acct} in parent settings to check off that chore.`); } }
+    else toast("That didn't save. Check the Wi-Fi and tap it again.");
   }
 }
 
@@ -588,9 +654,10 @@ function choreItem({t, sub}, today, inWeek){
     tag = `<span class="late">from ${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>`;
   else if (inWeek && due)
     tag = `<span class="when-due">${parseYmd(due).toLocaleDateString([], choreWeek > 0 ? {weekday:'short', month:'short', day:'numeric'} : {weekday:'long'})}</span>`;
-  return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t.id)}">
+  const src = settings.taskLists.length > 1 && t._listName && !sub ? `<span class="src">${esc(t._listName)}</span>` : '';
+  return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t._key || t.id)}">
     <span class="box">${CHECK}</span>
-    <span><span class="t">${esc(t.title)}</span>${tag}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
+    <span><span class="t">${esc(t.title)}</span>${tag}${src}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
   </button></li>`;
 }
 
@@ -606,8 +673,8 @@ function renderChores(){
   const box = document.getElementById('choreList'); if (!box) return;
   const name = settings.name.trim();
   document.getElementById('choresTitle').textContent = name ? `${name}'s chores` : 'Chores';
-  if (!settings.taskList){
-    box.innerHTML = `<p class="empty">Pick a task list in parent settings (press and hold the gear).</p>`;
+  if (!settings.taskLists.length){
+    box.innerHTML = `<p class="empty">Pick a chore list in parent settings (press and hold the gear).</p>`;
     return;
   }
   const today = ymd(new Date());
@@ -639,8 +706,10 @@ function renderChores(){
 function renderFooter(){
   const s = document.getElementById('status'), u = document.getElementById('updated');
   if (!s) return;
-  s.textContent = lastError ? `${lastError} Showing the last saved schedule.` : '';
-  s.className = lastError ? 'warn' : '';
+  const rc = [...needsReconnect];
+  s.textContent = lastError ? `${lastError} Showing the last saved schedule.`
+    : rc.length ? `Reconnect ${rc.join(' and ')} in parent settings to update those chores.` : '';
+  s.className = (lastError || rc.length) ? 'warn' : '';
   u.textContent = data.at ? `Updated ${fmtTimeLong(new Date(data.at))}` : '';
 }
 
@@ -758,24 +827,47 @@ async function openSettings(){
   const dlg = document.getElementById('settingsDialog'), panel = document.getElementById('settingsPanel');
   panel.innerHTML = `<h1>Parent settings</h1><p>Loading your calendars and lists…</p>`;
   if (!dlg.open) dlg.showModal();
-  let cals = [], lists = [];
-  try { [cals, lists] = await Promise.all([loadCalendarList(), loadTaskLists()]); }
-  catch(e){ if (e.message === 'auth') return; panel.innerHTML = `<h1>Parent settings</h1><p class="err">Couldn't load your Google calendars. Check the connection and try again.</p><div class="actions"><button class="btn" onclick="this.closest('dialog').close()">Close</button></div>`; return; }
+  let cals = [];
+  const accts = ['primary', ...settings.extraAccounts];
+  const listsBy = {};
+  try {
+    cals = await loadCalendarList();
+    await Promise.all(accts.map(async a => {
+      if (!token(a)){ listsBy[a] = null; return; }
+      try { listsBy[a] = await loadTaskLists(a); } catch(e){ if (e instanceof AuthNeeded && a !== 'primary') listsBy[a] = null; else throw e; }
+    }));
+  } catch(e){
+    if (e instanceof AuthNeeded){ dlg.close(); reauth(e.acct); return; }
+    panel.innerHTML = `<h1>Parent settings</h1><p class="err">Couldn't load your Google calendars. Check the connection and try again.</p><div class="actions"><button class="btn" onclick="this.closest('dialog').close()">Close</button></div>`; return;
+  }
   if (!settings.calendars.length){ const p = cals.find(c => c.primary); if (p) settings.calendars = [p.id]; }
-  if (!settings.taskList && lists[0]) settings.taskList = lists[0].id;
+  if (!settings.taskLists.length && listsBy.primary && listsBy.primary[0]) settings.taskLists = [{ acct:'primary', id:listsBy.primary[0].id, name:listsBy.primary[0].name }];
+  const picked = (a, id) => settings.taskLists.some(l => l.acct === a && l.id === id);
+  const primaryLabel = LS.get('primaryEmail', '') || 'Main account';
+  const acctBlock = a => {
+    const label = a === 'primary' ? `${primaryLabel} (main)` : a;
+    const lists = listsBy[a];
+    const body = lists === null
+      ? `<p class="hint">Signed out on this iPad. <button class="btn ghost small" data-reconnect="${esc(a)}">Reconnect</button></p>`
+      : lists.length ? lists.map(l => `<label><input type="checkbox" data-acct="${esc(a)}" data-name="${esc(l.name)}" value="${esc(l.id)}" ${picked(a, l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')
+      : `<p class="hint">No task lists in this account yet.</p>`;
+    const remove = a === 'primary' ? '' : `<button class="btn ghost small" data-remove="${esc(a)}">Remove</button>`;
+    return `<div class="acct"><div class="acct-head"><strong>${esc(label)}</strong>${remove}</div>${body}</div>`;
+  };
   panel.innerHTML = `
     <h1>Parent settings</h1>
     <div class="field"><label for="sName">Her name</label>
       <input type="text" id="sName" value="${esc(settings.name)}" placeholder="Shown above the chore list" autocomplete="off"></div>
     <div class="field"><span class="lbl">Calendars to show</span>
-      <div class="checks">${cals.map(c => `<label><input type="checkbox" value="${esc(c.id)}" ${settings.calendars.includes(c.id)?'checked':''}>
+      <div class="checks" id="calChecks">${cals.map(c => `<label><input type="checkbox" value="${esc(c.id)}" ${settings.calendars.includes(c.id)?'checked':''}>
         <span class="swatch" style="background:${c.color}"></span>${esc(c.name)}</label>`).join('')}</div></div>
     <div class="field"><label for="sCustody">Custody calendar</label>
       <select id="sCustody"><option value="">None</option>${cals.map(c => `<option value="${esc(c.id)}" ${settings.custodyCal===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <span class="hint">Its events become the colored band across each day, like "Mom's" or "Dad's". Give each parent's events a different event color in Google Calendar to control the colors.</span></div>
-    <div class="field"><label for="sList">Chore list (Google Tasks)</label>
-      <select id="sList">${lists.map(l => `<option value="${esc(l.id)}" ${settings.taskList===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select>
-      <span class="hint">Shows tasks due today, overdue tasks, and tasks with no date. Checked-off tasks stay visible until midnight.</span></div>
+    <div class="field"><span class="lbl">Chore lists (Google Tasks)</span>
+      <div class="checks lists" id="listChecks">${accts.map(acctBlock).join('')}</div>
+      <button class="btn ghost small" id="sAdd" style="align-self:flex-start">Add another Google account</button>
+      <span class="hint">Pick lists from any connected account; they're combined into one chore list. Each added account must also be a test user in Google Cloud.</span></div>
     <div class="field"><label for="sWeeks">Weeks on screen</label>
       <select id="sWeeks">${[2,3,4,5].map(n => `<option value="${n}" ${settings.weeks===n?'selected':''}>${n} weeks</option>`).join('')}</select></div>
     <div class="field"><label for="sStart">Week starts on</label>
@@ -784,24 +876,45 @@ async function openSettings(){
       <label class="inline"><input type="checkbox" id="sSounds" ${settings.sounds ? 'checked' : ''}> Play a sound when she checks off a chore</label>
       <span class="hint">Sound plays only when the iPad's volume is up and it isn't on silent.</span></div>
     <div class="actions">
-      <button class="btn warn" id="sOut">Disconnect Google</button>
+      <button class="btn warn" id="sOut">Disconnect all accounts</button>
       <button class="btn ghost" id="sCancel">Cancel</button>
       <button class="btn" id="sSave">Save</button>
     </div>`;
-  panel.querySelector('#sCancel').onclick = () => dlg.close();
-  panel.querySelector('#sOut').onclick = () => {
-    LS.del('token'); LS.del('connected'); LS.del('cache'); dlg.close(); showConnect('signedout');
-  };
-  panel.querySelector('#sSave').onclick = () => {
+  const collect = () => {
     settings.name = panel.querySelector('#sName').value.trim();
-    settings.calendars = [...panel.querySelectorAll('.checks input:checked')].map(i => i.value);
+    settings.calendars = [...panel.querySelectorAll('#calChecks input:checked')].map(i => i.value);
     settings.custodyCal = panel.querySelector('#sCustody').value;
-    settings.taskList = panel.querySelector('#sList').value;
+    const shown = [...panel.querySelectorAll('#listChecks input[data-acct]')];
+    const shownAccts = new Set(shown.map(i => i.dataset.acct));
+    // Keep selections for signed-out accounts that couldn't be listed right now.
+    const kept = settings.taskLists.filter(l => !shownAccts.has(l.acct) && accts.includes(l.acct));
+    settings.taskLists = kept.concat(shown.filter(i => i.checked).map(i => ({ acct:i.dataset.acct, id:i.value, name:i.dataset.name })));
     settings.weeks = Number(panel.querySelector('#sWeeks').value);
     settings.weekStart = Number(panel.querySelector('#sStart').value);
     settings.sounds = panel.querySelector('#sSounds').checked;
     settings.configured = true;
-    saveSettings(); dlg.close(); weekOffset = 0;
+    saveSettings();
+  };
+  panel.querySelector('#sCancel').onclick = () => dlg.close();
+  panel.querySelector('#sAdd').onclick = () => { collect(); startAuth(false, 'add'); };
+  panel.querySelectorAll('[data-reconnect]').forEach(b => b.onclick = () => { collect(); startAuth(false, b.dataset.reconnect); });
+  panel.querySelectorAll('[data-remove]').forEach(b => b.onclick = () => {
+    const a = b.dataset.remove;
+    collect();
+    settings.extraAccounts = settings.extraAccounts.filter(x => x !== a);
+    settings.taskLists = settings.taskLists.filter(l => l.acct !== a);
+    saveSettings(); dropToken(a); needsReconnect.delete(a);
+    data.tasks = data.tasks.filter(t => t._acct !== a); LS.set('cache', data);
+    openSettings();
+  });
+  panel.querySelector('#sOut').onclick = () => {
+    LS.del('tokens'); LS.del('connected'); LS.del('cache'); LS.del('primaryEmail');
+    settings.extraAccounts = []; settings.taskLists = settings.taskLists.filter(l => l.acct === 'primary'); saveSettings();
+    data = { events:[], tasks:[], calMeta:{}, at:0 };
+    dlg.close(); showConnect('signedout');
+  };
+  panel.querySelector('#sSave').onclick = () => {
+    collect(); dlg.close(); weekOffset = 0;
     if (!mounted) showMain();
     renderMain(); refresh();
   };
@@ -874,18 +987,20 @@ addEventListener('online', () => { if (mounted) refresh(); });
 /* =========================================================
    Start
    ========================================================= */
-(function init(){
+(async function init(){
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   const r = readAuthHash();
   if (!settings.clientId) return showSetup();
-  if (!token()){
-    if (r && r.error) return showConnect(r.error === 'interaction_required' || r.error === 'login_required' || r.error === 'consent_required' ? 'expired' : r.error);
-    if (LS.get('connected', false) && !recentlyTriedSilent()) return startAuth(true);
-    // No connection yet, but show last saved schedule if we have one.
+  if (r && r.ok) await finishAuth(r);
+  if (r && r.error && r.acct !== 'primary' && r.acct !== 'add'){ needsReconnect.add(r.acct); }
+  if (r && r.error && r.acct === 'add' && r.error !== 'access_denied') toast("Couldn't add that account. Check it's a test user in Google Cloud, then try again.");
+  if (!token('primary')){
+    if (r && r.error && r.acct === 'primary') return showConnect(['interaction_required','login_required','consent_required','account_selection_required'].includes(r.error) ? 'expired' : r.error);
+    if (LS.get('connected', false) && !recentlyTriedSilent('primary')) return startAuth(true, 'primary');
     return showConnect(LS.get('connected', false) ? 'expired' : null);
   }
   showMain(); keepAwake();
-  if (!settings.configured) openSettings();
+  if (!settings.configured || LS.get('reopenSettings', false)){ LS.del('reopenSettings'); openSettings(); }
   refresh();
 })();
 </script>
