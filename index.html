@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Our Week</title>
+<meta name="theme-color" content="#EAF0F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121A22" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Our Week">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EAF0F4; --card:#FFFFFF; --ink:#1E2A36; --muted:#5E6B78; --line:#D3DCE4;
+  --sun:#F2B33D; --soft:#F4F7FA; --danger:#B3261E;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --paper:#121A22; --card:#1B2530; --ink:#EAF0F4; --muted:#9AA8B5; --line:#2C3946;
+    --soft:#16202A; --danger:#F2B8B5; color-scheme: dark; }
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body,#root{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:'Lexend',ui-rounded,system-ui,-apple-system,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;
+  padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid #4C7BE0;outline-offset:2px;border-radius:8px}
+[hidden]{display:none!important}
+
+/* ---------- layout ---------- */
+.app{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,30%);grid-template-rows:auto minmax(0,1fr) auto;
+  gap:18px 22px;height:100%;padding:20px 24px 12px}
+.top{grid-column:1/-1;display:flex;align-items:flex-start;gap:24px}
+.when h1{margin:0;font-size:2.3rem;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.clock{margin:.2rem 0 0;color:var(--muted);font-size:1.1rem;font-weight:400;font-variant-numeric:tabular-nums}
+.custody-now{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;text-align:right}
+.tonight{display:inline-flex;align-items:center;gap:10px;padding:10px 18px 10px 12px;border-radius:999px;
+  font-size:1.35rem;font-weight:600;background:var(--chip);color:var(--chipInk);white-space:nowrap}
+.tonight .dot{width:14px;height:14px;border-radius:50%;background:var(--chipInk);opacity:.85}
+.next-switch{color:var(--muted);font-size:1rem}
+.gear{flex:none;width:44px;height:44px;border:0;border-radius:50%;background:transparent;color:var(--muted);
+  position:relative;cursor:pointer;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;touch-action:none}
+.gear svg{width:24px;height:24px}
+.gear::after{content:"";position:absolute;inset:2px;border-radius:50%;
+  background:conic-gradient(var(--ink) var(--p,0deg),transparent 0);
+  -webkit-mask:radial-gradient(circle,transparent 17px,#000 18px);mask:radial-gradient(circle,transparent 17px,#000 18px);opacity:.5}
+.gear.holding::after{animation:fillring 1.2s linear forwards}
+@property --p{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes fillring{to{--p:360deg}}
+
+/* ---------- calendar ---------- */
+.cal{display:flex;flex-direction:column;min-height:0}
+.cal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.cal-head h2{margin:0 auto 0 0;font-size:1.25rem;font-weight:500}
+.navbtn{border:1px solid var(--line);background:var(--card);border-radius:999px;height:38px;min-width:38px;padding:0 14px;
+  cursor:pointer;font-size:.95rem}
+.dows{display:grid;grid-template-columns:repeat(7,1fr);color:var(--muted);font-size:.85rem;padding:0 2px 6px}
+.dows span{padding-left:10px}
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);
+  background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.day{position:relative;min-width:0;min-height:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:var(--tint,transparent);padding:27px 6px 6px;text-align:left;cursor:pointer;border-top:0;border-left:0;
+  display:flex;flex-direction:column;gap:3px;font-size:.82rem}
+.evs{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:3px}
+.day:nth-child(7n){border-right:0}
+.day.past .num,.day.past .evs{opacity:.45}
+.ribbon{position:absolute;left:0;right:0;top:0;height:22px;background:var(--band,transparent)}
+.rlabel{position:absolute;z-index:2;top:0;left:0;height:22px;padding:0 10px;color:var(--bandInk);font-size:.78rem;font-weight:600;
+  line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.num{align-self:flex-start;min-width:26px;height:26px;padding:0 5px;display:grid;place-items:center;border-radius:999px;
+  font-weight:500;font-size:.85rem;white-space:nowrap;margin-left:-2px}
+.day.today .num{background:var(--ink);color:var(--paper);font-weight:700}
+.day.today{box-shadow:inset 0 0 0 3px var(--ink)}
+.ev{display:flex;gap:5px;align-items:baseline;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.ev i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c);transform:translateY(-1px)}
+.ev b{font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
+.ev.allday{background:color-mix(in srgb,var(--c) 22%,transparent);border-radius:5px;padding:0 5px}
+.ev.allday i{display:none}
+.more{color:var(--muted);font-size:.75rem}
+
+/* ---------- chores ---------- */
+.chores{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 16px;display:flex;flex-direction:column;min-height:0}
+.chores h2{margin:0 0 4px 4px;font-size:1.4rem;font-weight:600}
+.progress{margin:0 0 14px 4px;color:var(--muted);font-size:.95rem}
+.list{list-style:none;margin:0;padding:0;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.chore{width:100%;display:flex;align-items:center;gap:14px;border:0;background:var(--soft);border-radius:14px;
+  padding:12px 12px;text-align:left;cursor:pointer;min-height:60px}
+.chore.sub{margin-left:28px;width:calc(100% - 28px);min-height:50px}
+.box{flex:none;width:34px;height:34px;border-radius:50%;border:3px solid var(--line);display:grid;place-items:center;
+  transition:background .18s,border-color .18s,transform .18s}
+.box svg{width:18px;height:18px;opacity:0;transition:opacity .15s}
+.chore[aria-checked="true"] .box{background:var(--sun);border-color:var(--sun);transform:scale(1.06)}
+.chore[aria-checked="true"] .box svg{opacity:1}
+.chore .t{font-size:1.15rem;font-weight:500;line-height:1.25}
+.chore .n{display:block;font-size:.85rem;color:var(--muted);font-weight:400;margin-top:2px}
+.chore[aria-checked="true"] .t{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px}
+.late{display:inline-block;font-size:.75rem;font-weight:500;color:var(--muted);margin-left:6px}
+.alldone{margin:auto 0 0;padding:16px 4px 2px;display:flex;align-items:center;gap:12px;font-size:1.2rem;font-weight:600}
+.alldone .sunburst{width:40px;height:40px;flex:none}
+.alldone.pop .sunburst{animation:pop .7s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pop{0%{transform:scale(.2) rotate(-40deg)}100%{transform:scale(1) rotate(0)}}
+.empty{color:var(--muted);font-size:1rem;padding:8px 4px;line-height:1.5}
+
+.foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.8rem;min-height:1.2em}
+.foot .warn{color:var(--danger)}
+
+/* ---------- screens & dialogs ---------- */
+.screen{min-height:100%;display:grid;place-items:center;padding:24px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;max-width:560px;width:100%}
+.panel h1{margin:0 0 8px;font-size:1.7rem;font-weight:600}
+.panel p{line-height:1.55;color:var(--muted);margin:.4rem 0 1rem}
+.field{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+.field label,.field .lbl{font-weight:500;font-size:.95rem}
+.field input[type=text],.field select{font:inherit;font-size:1rem;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--soft);color:var(--ink);width:100%}
+.hint{font-size:.85rem;color:var(--muted)}
+.copyrow{display:flex;gap:8px;align-items:center}
+.copyrow code{flex:1;min-width:0;overflow:auto;white-space:nowrap;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:.85rem}
+.btn{border:0;border-radius:999px;padding:12px 22px;font-weight:600;font-size:1rem;cursor:pointer;background:var(--ink);color:var(--paper)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.small{padding:8px 14px;font-size:.9rem}
+.btn.warn{background:transparent;color:var(--danger);border:1px solid var(--line)}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+.checks{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--soft)}
+.checks label{display:flex;gap:10px;align-items:center;font-size:.95rem}
+.swatch{width:12px;height:12px;border-radius:3px;flex:none}
+.err{color:var(--danger);font-size:.95rem}
+
+dialog{border:0;border-radius:22px;padding:0;background:var(--card);color:var(--ink);max-width:min(560px,92vw);width:100%;
+  box-shadow:0 20px 60px rgba(10,20,30,.35)}
+dialog::backdrop{background:rgba(18,26,34,.45)}
+dialog .panel{border:0;max-height:85vh;overflow:auto}
+.dlist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.dlist li{display:flex;gap:12px;align-items:flex-start;font-size:1.05rem}
+.dlist .c{width:12px;height:12px;border-radius:50%;margin-top:6px;flex:none}
+.dlist small{display:block;color:var(--muted);font-size:.9rem}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);
+  padding:12px 18px;border-radius:12px;font-size:.95rem;z-index:10}
+
+/* portrait iPad & phones: chores first, page scrolls */
+@media (max-width: 900px), (orientation: portrait){
+  .app{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;height:auto;min-height:100%}
+  .top{flex-wrap:wrap}
+  .when{flex:1}
+  .custody-now{order:3;width:100%;margin-left:0;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 16px;text-align:left}
+  .chores{order:1}
+  .cal{order:2}
+  .foot{order:3}
+  .grid{grid-auto-rows:minmax(96px,auto)}
+  .list{overflow:visible}
+}
+@media (max-width: 600px){
+  .top{flex-wrap:wrap}
+  .custody-now{margin-left:0;align-items:flex-start;text-align:left;order:3;width:100%}
+  .when h1{font-size:1.7rem}
+  .day{font-size:.7rem;padding:28px 4px 4px}
+  .rlabel{padding:0 5px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<dialog id="dayDialog"><div class="panel" id="dayPanel"></div></dialog>
+<dialog id="settingsDialog"><div class="panel" id="settingsPanel"></div></dialog>
+
+<script>
+'use strict';
+/* =========================================================
+   Storage helpers
+   ========================================================= */
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem('ow.'+k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem('ow.'+k, JSON.stringify(v)); }catch{} },
+  del(k){ try{ localStorage.removeItem('ow.'+k); }catch{} }
+};
+const DEFAULTS = { clientId:'', calendars:[], custodyCal:'', taskList:'', name:'', weekStart:0, weeks:4, configured:false };
+let settings = Object.assign({}, DEFAULTS, LS.get('settings', {}));
+const saveSettings = () => LS.set('settings', settings);
+
+/* =========================================================
+   Dates
+   ========================================================= */
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parseYmd = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const fmtTime = d => d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}).replace(':00','').replace(/\s?([AP])M/i,(m,a)=>a.toLowerCase());
+const fmtTimeLong = d => d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* =========================================================
+   Colors
+   ========================================================= */
+const GCOL = {1:'#7986cb',2:'#33b679',3:'#8e24aa',4:'#e67c73',5:'#f6bf26',6:'#f4511e',7:'#039be5',8:'#616161',9:'#3f51b5',10:'#0b8043',11:'#d50000'};
+const CUSTODY_PALETTE = ['#4C7BE0','#E07A4C','#2E9D6E','#9B63D1','#C9961A'];
+function hash(s){ let h=0; for(const c of String(s)) h = (h*31 + c.charCodeAt(0))|0; return Math.abs(h); }
+function inkFor(hex){
+  const n = parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  const L = (0.2126*r + 0.7152*g + 0.0722*b)/255;
+  return L > 0.6 ? '#1E2A36' : '#FFFFFF';
+}
+
+/* =========================================================
+   Google sign-in (OAuth redirect flow, no server needed)
+   ========================================================= */
+const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks';
+const CAL = 'https://www.googleapis.com/calendar/v3';
+const TASKS = 'https://tasks.googleapis.com/tasks/v1';
+const redirectUri = () => location.origin + location.pathname;
+
+function startAuth(silent){
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2,'0')).join('');
+  LS.set('state', state);
+  if (silent) LS.set('silentAt', Date.now());
+  const p = new URLSearchParams({
+    client_id: settings.clientId, redirect_uri: redirectUri(), response_type: 'token',
+    scope: SCOPES, include_granted_scopes: 'true', state
+  });
+  if (silent) p.set('prompt', 'none');
+  location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + p);
+}
+function readAuthHash(){
+  const h = location.hash;
+  if (!h || !(h.includes('access_token=') || h.includes('error='))) return null;
+  const q = new URLSearchParams(h.slice(1));
+  history.replaceState(null, '', redirectUri() + location.search);
+  const expected = LS.get('state', null); LS.del('state');
+  if (!expected || q.get('state') !== expected) return { error:'state_mismatch' };
+  if (q.get('error')) return { error:q.get('error') };
+  LS.set('token', { v:q.get('access_token'), exp:Date.now() + Number(q.get('expires_in')||3600)*1000 });
+  LS.set('connected', true);
+  LS.del('silentAt');
+  return { ok:true };
+}
+function token(){ const t = LS.get('token', null); return t && t.exp - 60000 > Date.now() ? t.v : null; }
+const recentlyTriedSilent = () => Date.now() - LS.get('silentAt', 0) < 3*60*1000;
+
+function reauth(){
+  // Try a quiet re-sign-in once; if Google needs a tap, show the connect screen instead of looping.
+  if (LS.get('connected', false) && !recentlyTriedSilent()) startAuth(true);
+  else showConnect('expired');
+}
+
+async function api(url, opts = {}){
+  const t = token();
+  if (!t){ reauth(); throw new Error('auth'); }
+  const res = await fetch(url, { ...opts, headers: { Authorization:'Bearer '+t, 'Content-Type':'application/json', ...(opts.headers||{}) } });
+  if (res.status === 401){ LS.del('token'); reauth(); throw new Error('auth'); }
+  if (!res.ok) throw new Error(`Google returned ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+
+/* =========================================================
+   Data
+   ========================================================= */
+let data = LS.get('cache', { events:[], tasks:[], calMeta:{}, at:0 });
+let weekOffset = 0;
+let lastError = '';
+let allDoneBefore = null;
+
+function range(){
+  const today = midnight(new Date());
+  const back = (today.getDay() - settings.weekStart + 7) % 7;
+  const start = addDays(today, -back + weekOffset*7);
+  return { start, end: addDays(start, settings.weeks*7), today };
+}
+
+async function loadCalendarList(){
+  const r = await api(`${CAL}/users/me/calendarList?minAccessRole=reader&maxResults=250`);
+  return (r.items || []).map(c => ({ id:c.id, name:c.summaryOverride || c.summary, color:c.backgroundColor, primary:!!c.primary }));
+}
+async function loadTaskLists(){
+  const r = await api(`${TASKS}/users/@me/lists?maxResults=100`);
+  return (r.items || []).map(l => ({ id:l.id, name:l.title }));
+}
+
+async function refresh(){
+  if (!token()){ reauth(); return; }
+  const { start, end, today } = range();
+  const tMax = new Date(Math.max(end, addDays(today, 42)));
+  const cals = [...new Set([...settings.calendars, settings.custodyCal].filter(Boolean))];
+  try{
+    const calList = await loadCalendarList();
+    const meta = Object.fromEntries(calList.map(c => [c.id, c]));
+    const evLists = await Promise.all(cals.map(async id => {
+      const q = new URLSearchParams({ timeMin:addDays(start,-1).toISOString(), timeMax:tMax.toISOString(),
+        singleEvents:'true', orderBy:'startTime', maxResults:'500' });
+      const r = await api(`${CAL}/calendars/${encodeURIComponent(id)}/events?${q}`);
+      return (r.items || []).filter(e => e.status !== 'cancelled').map(e => ({
+        cal:id, id:e.id, title:e.summary || '(No title)', colorId:e.colorId, location:e.location || '',
+        allDay:!!e.start.date, start:e.start.date || e.start.dateTime, end:e.end.date || e.end.dateTime
+      }));
+    }));
+    let tasks = [];
+    if (settings.taskList){
+      const q = new URLSearchParams({ showCompleted:'true', showHidden:'true', maxResults:'100' });
+      const r = await api(`${TASKS}/lists/${encodeURIComponent(settings.taskList)}/tasks?${q}`);
+      tasks = (r.items || []).filter(t => !t.deleted && t.title && t.title.trim());
+    }
+    data = { events:evLists.flat(), tasks, calMeta:meta, at:Date.now() };
+    LS.set('cache', data);
+    lastError = '';
+  }catch(e){
+    if (e.message === 'auth') return;
+    lastError = navigator.onLine ? "Can't reach Google right now." : 'No internet connection.';
+  }
+  renderMain();
+}
+
+/* =========================================================
+   Custody + events by day
+   ========================================================= */
+function calColor(calId){ return (data.calMeta[calId] && data.calMeta[calId].color) || '#4C7BE0'; }
+function eventColor(e){ return e.colorId && GCOL[e.colorId] ? GCOL[e.colorId] : calColor(e.cal); }
+
+function custodyColor(e){
+  if (e.colorId && GCOL[e.colorId]) return GCOL[e.colorId];
+  return CUSTODY_PALETTE[hash(e.title.trim().toLowerCase()) % CUSTODY_PALETTE.length];
+}
+// A day belongs to whoever has her at 8 pm, so exchange days show where she sleeps.
+function custodyFor(day){
+  if (!settings.custodyCal) return null;
+  const at8 = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 20);
+  let best = null, bestStart = -Infinity;
+  for (const e of data.events){
+    if (e.cal !== settings.custodyCal) continue;
+    let s, en, covers;
+    if (e.allDay){ s = parseYmd(e.start); en = parseYmd(e.end); covers = s <= day && day < en; }
+    else { s = new Date(e.start); en = new Date(e.end); covers = s <= at8 && at8 < en; }
+    if (covers && +s > bestStart){ best = e; bestStart = +s; }
+  }
+  return best ? { title:best.title, color:custodyColor(best) } : null;
+}
+
+function eventsByDay(){
+  const map = {};
+  const push = (k, e) => (map[k] ||= []).push(e);
+  for (const e of data.events){
+    if (e.cal === settings.custodyCal) continue;
+    if (e.allDay){
+      for (let d = parseYmd(e.start), end = parseYmd(e.end); d < end; d = addDays(d,1)) push(ymd(d), e);
+    } else push(ymd(new Date(e.start)), e);
+  }
+  for (const k in map) map[k].sort((a,b) => (b.allDay - a.allDay) || (new Date(a.start) - new Date(b.start)));
+  return map;
+}
+
+function nextSwitch(today, now){
+  if (!now) return null;
+  for (let i = 1; i <= 42; i++){
+    const d = addDays(today, i), c = custodyFor(d);
+    if (c && c.title !== now.title){
+      const when = i === 1 ? 'tomorrow' : i < 7 ? 'on ' + d.toLocaleDateString([], {weekday:'long'})
+        : 'on ' + d.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+      return { ...c, when };
+    }
+  }
+  return null;
+}
+
+/* =========================================================
+   Chores
+   ========================================================= */
+function visibleTasks(){
+  const today = ymd(new Date());
+  const keep = t => {
+    const due = t.due ? t.due.slice(0,10) : null;
+    if (t.status === 'completed') return t.completed && ymd(new Date(t.completed)) === today;
+    return !due || due <= today;
+  };
+  const shown = data.tasks.filter(keep);
+  const ids = new Set(shown.map(t => t.id));
+  const byPos = (a,b) => (a.position||'').localeCompare(b.position||'');
+  const tops = shown.filter(t => !t.parent || !ids.has(t.parent)).sort(byPos);
+  const out = [];
+  for (const t of tops){
+    out.push({ t, sub:false });
+    shown.filter(s => s.parent === t.id).sort(byPos).forEach(s => out.push({ t:s, sub:true }));
+  }
+  return out;
+}
+
+async function toggleTask(id){
+  const t = data.tasks.find(x => x.id === id); if (!t) return;
+  const done = t.status !== 'completed';
+  const prev = { status:t.status, completed:t.completed };
+  t.status = done ? 'completed' : 'needsAction';
+  t.completed = done ? new Date().toISOString() : undefined;
+  renderChores();
+  try{
+    const body = done ? { status:'completed' } : { status:'needsAction', completed:null };
+    const upd = await api(`${TASKS}/lists/${encodeURIComponent(settings.taskList)}/tasks/${encodeURIComponent(id)}`,
+      { method:'PATCH', body:JSON.stringify(body) });
+    if (upd) Object.assign(t, upd);
+    LS.set('cache', data);
+  }catch(e){
+    t.status = prev.status; t.completed = prev.completed;
+    renderChores();
+    if (e.message !== 'auth') toast("That didn't save. Check the Wi-Fi and tap it again.");
+  }
+}
+
+/* =========================================================
+   Rendering
+   ========================================================= */
+const root = document.getElementById('root');
+const GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#1E2A36" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const SUN = '<svg class="sunburst" viewBox="0 0 40 40" aria-hidden="true"><g fill="#F2B33D"><circle cx="20" cy="20" r="8"/>' +
+  Array.from({length:8},(_,i)=>`<rect x="18.5" y="2" width="3" height="7" rx="1.5" transform="rotate(${i*45} 20 20)"/>`).join('') + '</g></svg>';
+
+let mounted = false;
+function showMain(){
+  mounted = true;
+  root.innerHTML = `
+  <div class="app">
+    <header class="top">
+      <div class="when"><h1 id="date"></h1><p class="clock" id="clock"></p></div>
+      <div class="custody-now" id="custodyNow"></div>
+      <button class="gear" id="gear" aria-label="Parent settings. Press and hold.">${GEAR}</button>
+    </header>
+    <section class="cal" aria-label="Calendar">
+      <div class="cal-head">
+        <h2 id="rangeLabel"></h2>
+        <button class="navbtn" id="prevW" aria-label="Earlier weeks">‹</button>
+        <button class="navbtn" id="todayW">Today</button>
+        <button class="navbtn" id="nextW" aria-label="Later weeks">›</button>
+      </div>
+      <div class="dows" id="dows"></div>
+      <div class="grid" id="grid"></div>
+    </section>
+    <section class="chores" aria-labelledby="choresTitle">
+      <h2 id="choresTitle"></h2>
+      <p class="progress" id="progress"></p>
+      <ul class="list" id="choreList"></ul>
+      <div id="allDone"></div>
+    </section>
+    <footer class="foot"><span id="status"></span><span id="updated"></span></footer>
+  </div>`;
+  document.getElementById('prevW').onclick = () => { weekOffset--; renderCalendar(); };
+  document.getElementById('nextW').onclick = () => { weekOffset++; renderCalendar(); };
+  document.getElementById('todayW').onclick = () => { weekOffset = 0; renderCalendar(); };
+  document.getElementById('choreList').addEventListener('click', e => {
+    const b = e.target.closest('[data-task]'); if (b) toggleTask(b.dataset.task);
+  });
+  document.getElementById('grid').addEventListener('click', e => {
+    const b = e.target.closest('[data-day]'); if (b) openDay(b.dataset.day);
+  });
+  wireGear(document.getElementById('gear'));
+  renderMain();
+}
+
+function renderMain(){
+  if (!mounted) return;
+  renderHeader(); renderCalendar(); renderChores(); renderFooter();
+}
+
+function renderHeader(){
+  const now = new Date(), today = midnight(now);
+  document.getElementById('date').textContent = now.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
+  document.getElementById('clock').textContent = fmtTimeLong(now);
+  const box = document.getElementById('custodyNow');
+  const c = custodyFor(today);
+  if (!c){ box.innerHTML = ''; return; }
+  const n = nextSwitch(today, c);
+  box.innerHTML = `<span class="tonight" style="--chip:${c.color};--chipInk:${inkFor(c.color)}"><span class="dot"></span>Tonight: ${esc(c.title)}</span>` +
+    (n ? `<span class="next-switch">${esc(n.title)} starts ${esc(n.when)}</span>` : '');
+}
+
+function renderCalendar(){
+  const { start, end, today } = range();
+  const dowEl = document.getElementById('dows');
+  dowEl.innerHTML = Array.from({length:7}, (_,i) => `<span>${addDays(start,i).toLocaleDateString([], {weekday:'short'})}</span>`).join('');
+  const last = addDays(end, -1);
+  const m1 = start.toLocaleDateString([], {month:'long'}), m2 = last.toLocaleDateString([], {month:'long'});
+  document.getElementById('rangeLabel').textContent = m1 === m2 ? m1 : `${m1} and ${m2}`;
+  const byDay = eventsByDay();
+  const max = settings.weeks <= 2 ? 6 : settings.weeks <= 4 ? 3 : 2;
+  let html = '', prevCust = null;
+  for (let i = 0; i < settings.weeks*7; i++){
+    const d = addDays(start, i), key = ymd(d);
+    const cust = custodyFor(d);
+    const showLabel = cust && (i % 7 === 0 || !prevCust || prevCust.title !== cust.title);
+    prevCust = cust;
+    let run = 1;
+    if (showLabel){ while (i % 7 + run < 7){ const c2 = custodyFor(addDays(d, run)); if (!c2 || c2.title !== cust.title) break; run++; } }
+    const evs = byDay[key] || [];
+    const shown = evs.slice(0, max).map(e => {
+      const c = eventColor(e);
+      return e.allDay
+        ? `<span class="ev allday" style="--c:${c}">${esc(e.title)}</span>`
+        : `<span class="ev" style="--c:${c}"><i></i><b>${fmtTime(new Date(e.start))}</b>${esc(e.title)}</span>`;
+    }).join('');
+    const more = evs.length > max ? `<span class="more">+${evs.length - max} more</span>` : '';
+    const style = cust ? `--tint:color-mix(in srgb, ${cust.color} 12%, transparent);--band:${cust.color};--bandInk:${inkFor(cust.color)}` : '';
+    const label = d.getDate() === 1 ? d.toLocaleDateString([], {month:'short', day:'numeric'}) : d.getDate();
+    const aria = d.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}) + (cust ? `, ${cust.title}` : '') + (evs.length ? `, ${evs.length} event${evs.length>1?'s':''}` : '');
+    html += `<button class="day${+d === +today ? ' today' : ''}${d < today ? ' past' : ''}" data-day="${key}" style="${style}" aria-label="${esc(aria)}">
+      ${cust ? `<span class="ribbon"></span>` : ''}
+      ${showLabel ? `<span class="rlabel" style="width:calc(${run} * 100% + ${run - 1}px)">${esc(cust.title)}</span>` : ''}
+      <span class="num">${label}</span><span class="evs">${shown}${more}</span></button>`;
+  }
+  const grid = document.getElementById('grid');
+  grid.style.gridTemplateRows = `repeat(${settings.weeks}, minmax(0,1fr))`;
+  grid.innerHTML = html;
+}
+
+function renderChores(){
+  const list = document.getElementById('choreList'); if (!list) return;
+  const name = settings.name.trim();
+  document.getElementById('choresTitle').textContent = name ? `${name}'s chores` : "Today's chores";
+  const items = visibleTasks();
+  const today = ymd(new Date());
+  const done = items.filter(x => x.t.status === 'completed').length;
+  document.getElementById('progress').textContent = items.length
+    ? (done === items.length ? `All ${items.length} done` : `${done} of ${items.length} done`) : '';
+  if (!settings.taskList){
+    list.innerHTML = `<li class="empty">Pick a task list in parent settings (press and hold the gear).</li>`;
+  } else if (!items.length){
+    list.innerHTML = `<li class="empty">Nothing on the list for today.</li>`;
+  } else {
+    list.innerHTML = items.map(({t, sub}) => {
+      const checked = t.status === 'completed';
+      const due = t.due ? t.due.slice(0,10) : null;
+      const late = !checked && due && due < today
+        ? `<span class="late">from ${parseYmd(due).toLocaleDateString([], {weekday:'long'})}</span>` : '';
+      return `<li><button class="chore${sub?' sub':''}" role="checkbox" aria-checked="${checked}" data-task="${esc(t.id)}">
+        <span class="box">${CHECK}</span>
+        <span><span class="t">${esc(t.title)}</span>${late}${t.notes ? `<span class="n">${esc(t.notes)}</span>` : ''}</span>
+      </button></li>`;
+    }).join('');
+  }
+  const all = items.length > 0 && done === items.length;
+  const box = document.getElementById('allDone');
+  box.innerHTML = all ? `<p class="alldone${allDoneBefore === false ? ' pop' : ''}">${SUN}All done for today</p>` : '';
+  allDoneBefore = all;
+}
+
+function renderFooter(){
+  const s = document.getElementById('status'), u = document.getElementById('updated');
+  if (!s) return;
+  s.textContent = lastError ? `${lastError} Showing the last saved schedule.` : '';
+  s.className = lastError ? 'warn' : '';
+  u.textContent = data.at ? `Updated ${fmtTimeLong(new Date(data.at))}` : '';
+}
+
+function openDay(key){
+  const d = parseYmd(key), cust = custodyFor(d);
+  const evs = eventsByDay()[key] || [];
+  const panel = document.getElementById('dayPanel');
+  panel.innerHTML = `
+    <h1>${d.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'})}</h1>
+    ${cust ? `<p><span class="tonight" style="--chip:${cust.color};--chipInk:${inkFor(cust.color)};font-size:1.05rem"><span class="dot"></span>Night: ${esc(cust.title)}</span></p>` : ''}
+    ${evs.length ? `<ul class="dlist">${evs.map(e => `<li><span class="c" style="background:${eventColor(e)}"></span><span>${esc(e.title)}
+      <small>${e.allDay ? 'All day' : `${fmtTimeLong(new Date(e.start))} to ${fmtTimeLong(new Date(e.end))}`}${e.location ? ` at ${esc(e.location)}` : ''}</small></span></li>`).join('')}</ul>`
+      : `<p>Nothing scheduled.</p>`}
+    <div class="actions"><button class="btn" id="closeDay">Close</button></div>`;
+  const dlg = document.getElementById('dayDialog');
+  panel.querySelector('#closeDay').onclick = () => dlg.close();
+  dlg.showModal();
+}
+
+let toastTimer;
+function toast(msg){
+  let el = document.querySelector('.toast');
+  if (!el){ el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role','status'); document.body.appendChild(el); }
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, 4000);
+}
+
+/* =========================================================
+   Parent settings (press and hold the gear)
+   ========================================================= */
+function wireGear(g){
+  let t;
+  const cancel = () => { clearTimeout(t); g.classList.remove('holding'); };
+  g.addEventListener('pointerdown', e => { e.preventDefault(); g.classList.add('holding'); t = setTimeout(() => { cancel(); openSettings(); }, 1200); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => g.addEventListener(ev, cancel));
+  g.addEventListener('contextmenu', e => e.preventDefault());
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openSettings(); } });
+}
+
+async function openSettings(){
+  const dlg = document.getElementById('settingsDialog'), panel = document.getElementById('settingsPanel');
+  panel.innerHTML = `<h1>Parent settings</h1><p>Loading your calendars and lists…</p>`;
+  if (!dlg.open) dlg.showModal();
+  let cals = [], lists = [];
+  try { [cals, lists] = await Promise.all([loadCalendarList(), loadTaskLists()]); }
+  catch(e){ if (e.message === 'auth') return; panel.innerHTML = `<h1>Parent settings</h1><p class="err">Couldn't load your Google calendars. Check the connection and try again.</p><div class="actions"><button class="btn" onclick="this.closest('dialog').close()">Close</button></div>`; return; }
+  if (!settings.calendars.length){ const p = cals.find(c => c.primary); if (p) settings.calendars = [p.id]; }
+  if (!settings.taskList && lists[0]) settings.taskList = lists[0].id;
+  panel.innerHTML = `
+    <h1>Parent settings</h1>
+    <div class="field"><label for="sName">Her name</label>
+      <input type="text" id="sName" value="${esc(settings.name)}" placeholder="Shown above the chore list" autocomplete="off"></div>
+    <div class="field"><span class="lbl">Calendars to show</span>
+      <div class="checks">${cals.map(c => `<label><input type="checkbox" value="${esc(c.id)}" ${settings.calendars.includes(c.id)?'checked':''}>
+        <span class="swatch" style="background:${c.color}"></span>${esc(c.name)}</label>`).join('')}</div></div>
+    <div class="field"><label for="sCustody">Custody calendar</label>
+      <select id="sCustody"><option value="">None</option>${cals.map(c => `<option value="${esc(c.id)}" ${settings.custodyCal===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      <span class="hint">Its events become the colored band across each day, like "Mom's" or "Dad's". Give each parent's events a different event color in Google Calendar to control the colors.</span></div>
+    <div class="field"><label for="sList">Chore list (Google Tasks)</label>
+      <select id="sList">${lists.map(l => `<option value="${esc(l.id)}" ${settings.taskList===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select>
+      <span class="hint">Shows tasks due today, overdue tasks, and tasks with no date. Checked-off tasks stay visible until midnight.</span></div>
+    <div class="field"><label for="sWeeks">Weeks on screen</label>
+      <select id="sWeeks">${[2,3,4,5].map(n => `<option value="${n}" ${settings.weeks===n?'selected':''}>${n} weeks</option>`).join('')}</select></div>
+    <div class="field"><label for="sStart">Week starts on</label>
+      <select id="sStart"><option value="0" ${settings.weekStart===0?'selected':''}>Sunday</option><option value="1" ${settings.weekStart===1?'selected':''}>Monday</option></select></div>
+    <div class="actions">
+      <button class="btn warn" id="sOut">Disconnect Google</button>
+      <button class="btn ghost" id="sCancel">Cancel</button>
+      <button class="btn" id="sSave">Save</button>
+    </div>`;
+  panel.querySelector('#sCancel').onclick = () => dlg.close();
+  panel.querySelector('#sOut').onclick = () => {
+    LS.del('token'); LS.del('connected'); LS.del('cache'); dlg.close(); showConnect('signedout');
+  };
+  panel.querySelector('#sSave').onclick = () => {
+    settings.name = panel.querySelector('#sName').value.trim();
+    settings.calendars = [...panel.querySelectorAll('.checks input:checked')].map(i => i.value);
+    settings.custodyCal = panel.querySelector('#sCustody').value;
+    settings.taskList = panel.querySelector('#sList').value;
+    settings.weeks = Number(panel.querySelector('#sWeeks').value);
+    settings.weekStart = Number(panel.querySelector('#sStart').value);
+    settings.configured = true;
+    saveSettings(); dlg.close(); weekOffset = 0;
+    if (!mounted) showMain();
+    renderMain(); refresh();
+  };
+}
+
+/* =========================================================
+   First-run screens
+   ========================================================= */
+function showSetup(){
+  mounted = false;
+  root.innerHTML = `<div class="screen"><div class="panel">
+    <h1>Set up Our Week</h1>
+    <p>This display reads Google Calendar and Google Tasks. It needs an OAuth Client ID from your own Google Cloud project. The README walks through getting one in about ten minutes.</p>
+    <div class="field"><span class="lbl">Add these to the Client ID in Google Cloud</span>
+      <span class="hint">Authorized JavaScript origin</span>
+      <div class="copyrow"><code>${esc(location.origin)}</code><button class="btn ghost small" data-copy="${esc(location.origin)}">Copy</button></div>
+      <span class="hint">Authorized redirect URI</span>
+      <div class="copyrow"><code>${esc(redirectUri())}</code><button class="btn ghost small" data-copy="${esc(redirectUri())}">Copy</button></div></div>
+    <div class="field"><label for="cid">OAuth Client ID</label>
+      <input type="text" id="cid" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(settings.clientId)}"></div>
+    <p class="err" id="cidErr" hidden>That doesn't look like a Google Client ID. It ends in .apps.googleusercontent.com.</p>
+    <div class="actions"><button class="btn" id="cidSave">Save and connect</button></div>
+  </div></div>`;
+  root.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try{ await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; }catch{ b.textContent = 'Select and copy'; }
+  });
+  root.querySelector('#cidSave').onclick = () => {
+    const v = root.querySelector('#cid').value.trim();
+    if (!/\.apps\.googleusercontent\.com$/.test(v)){ root.querySelector('#cidErr').hidden = false; return; }
+    settings.clientId = v; saveSettings(); startAuth(false);
+  };
+}
+
+function showConnect(reason){
+  mounted = false;
+  const msg = {
+    expired: 'Google needs you to sign in again. This happens now and then.',
+    signedout: 'Disconnected. Sign in to show the calendar and chores again.',
+    access_denied: 'Google sign-in was canceled. Try again when you are ready.',
+    state_mismatch: 'Sign-in didn\'t finish. Try again.'
+  }[reason] || 'Sign in with the Google account that has her calendar and chore list.';
+  root.innerHTML = `<div class="screen"><div class="panel">
+    <h1>Connect Google</h1><p>${esc(msg)}</p>
+    <div class="actions"><button class="btn ghost" id="chg">Change Client ID</button><button class="btn" id="go">Sign in with Google</button></div>
+  </div></div>`;
+  root.querySelector('#go').onclick = () => startAuth(false);
+  root.querySelector('#chg').onclick = showSetup;
+}
+
+/* =========================================================
+   Keep it alive on the wall
+   ========================================================= */
+let wakeLock = null;
+async function keepAwake(){
+  try{ if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); }catch{}
+}
+let lastDay = ymd(new Date());
+setInterval(() => {
+  if (!mounted) return;
+  const k = ymd(new Date());
+  if (k !== lastDay){ lastDay = k; weekOffset = 0; allDoneBefore = null; renderMain(); refresh(); }
+  else renderHeader();
+}, 15000);
+setInterval(() => { if (mounted && document.visibilityState === 'visible') refresh(); }, 5*60*1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible'){ keepAwake(); if (mounted && Date.now() - data.at > 60000) refresh(); }
+});
+addEventListener('online', () => { if (mounted) refresh(); });
+
+/* =========================================================
+   Start
+   ========================================================= */
+(function init(){
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  const r = readAuthHash();
+  if (!settings.clientId) return showSetup();
+  if (!token()){
+    if (r && r.error) return showConnect(r.error === 'interaction_required' || r.error === 'login_required' || r.error === 'consent_required' ? 'expired' : r.error);
+    if (LS.get('connected', false) && !recentlyTriedSilent()) return startAuth(true);
+    // No connection yet, but show last saved schedule if we have one.
+    return showConnect(LS.get('connected', false) ? 'expired' : null);
+  }
+  showMain(); keepAwake();
+  if (!settings.configured) openSettings();
+  refresh();
+})();
+</script>
+</body>
+</html>
