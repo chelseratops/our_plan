@@ -1,6 +1,6 @@
 {
-  "name": "Our Week",
-  "short_name": "Our Week",
+  "name": "Our Plan",
+  "short_name": "Our Plan",
   "description": "Calendar, custody schedule and chores at a glance.",
   "start_url": "./",
   "scope": "./",

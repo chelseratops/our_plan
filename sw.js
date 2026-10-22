@@ -1,6 +1,6 @@
 // Caches the app shell so the display still opens without Wi-Fi.
 // Google API calls are never cached here; the app keeps its own last-known data.
-const CACHE = 'our-week-v1';
+const CACHE = 'our-plan-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 

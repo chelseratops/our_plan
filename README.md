@@ -1,4 +1,4 @@
-# Our Week: setup guide
+# Our Plan: setup guide
 
 A wall display for her iPad: the custody schedule as a colored band across a multi-week calendar, your other calendar events, and a Google Tasks chore list she can check off. Everything runs in the browser; there is no server and no subscription.
 
@@ -6,25 +6,25 @@ You need three things: somewhere free to host the files, a Google Cloud OAuth Cl
 
 ## 1. Host the files (GitHub Pages, free)
 
-1. Create a GitHub account if you don't have one, then create a new **public** repository, for example `our-week`.
+1. Create a GitHub account if you don't have one, then create a new **public** repository, for example `our_plan`.
 2. Upload everything in this folder (`index.html`, `manifest.webmanifest`, `sw.js`, `README.md`, and the icon images) to the repository.
 3. In the repository, go to **Settings > Pages**, set Source to **Deploy from a branch**, branch `main`, folder `/ (root)`, and save.
-4. After a minute your app is live at `https://YOUR-USERNAME.github.io/our-week/`.
+4. After a minute your app is live at `https://YOUR-USERNAME.github.io/our_plan/`.
 
 The repository only holds app code. Your calendar data and Client ID never go into it.
 
 ## 2. Create a Google OAuth Client ID
 
-1. Go to https://console.cloud.google.com and create a new project (name it anything, like "Our Week").
+1. Go to https://console.cloud.google.com and create a new project (name it anything, like "Our Plan").
 2. **APIs & Services > Library**: enable **Google Calendar API** and **Google Tasks API**.
 3. **APIs & Services > OAuth consent screen** (also labeled "Google Auth Platform"):
-   - User type: **External**. App name: "Our Week". Add your email where asked.
+   - User type: **External**. App name: "Our Plan". Add your email where asked.
    - Leave publishing status as **Testing**.
    - Under **Test users** (or Audience), add the Google account the display will sign in with.
 4. **APIs & Services > Credentials > Create credentials > OAuth client ID**:
    - Application type: **Web application**.
    - Authorized JavaScript origins: `https://YOUR-USERNAME.github.io`
-   - Authorized redirect URIs: `https://YOUR-USERNAME.github.io/our-week/` (the trailing slash matters; the setup screen shows the exact values to copy)
+   - Authorized redirect URIs: `https://YOUR-USERNAME.github.io/our_plan/` (the trailing slash matters; the setup screen shows the exact values to copy)
 5. Copy the Client ID. It ends in `.apps.googleusercontent.com`.
 
 When you sign in, Google will warn that the app isn't verified. That's expected for a personal app in Testing mode: tap **Continue**.
@@ -34,12 +34,12 @@ When you sign in, Google will warn that the app isn't verified. That's expected 
 1. Open your GitHub Pages address in **Safari**.
 2. Paste the Client ID, tap **Save and connect**, and sign in.
 3. Parent settings open automatically. Pick the calendars to show, the custody calendar, and the chore list.
-4. Tap **Share > Add to Home Screen**, then open Our Week from the home screen.
+4. Tap **Share > Add to Home Screen**, then open Our Plan from the home screen.
 5. Sign in once more inside the home-screen app (it keeps its own storage, separate from Safari).
 
 To make it behave like a wall display:
 - Settings > Display & Brightness > Auto-Lock > **Never** (the app also asks the screen to stay on while it's open).
-- Settings > Accessibility > **Guided Access** on, then triple-click the side or top button while Our Week is open to lock the iPad to it.
+- Settings > Accessibility > **Guided Access** on, then triple-click the side or top button while Our Plan is open to lock the iPad to it.
 
 ## Using it
 
